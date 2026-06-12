@@ -24,7 +24,7 @@ shootouts) are detected automatically by who advances.
 1. Create a new GitHub repo and add `index.html` (this folder's file). The README is optional.
 2. Go to vercel.com, **Add New… → Project**, and import the repo.
 3. Framework preset: **Other**. Leave build command empty and output directory as the repo root.
-4. **Deploy.** Vercel gives you a URL like `your-pool.vercel.app` to share with the team.
+4. **Deploy.** Vercel gives you a URL like `https://mds-fifa-pool.vercel.app/` to share with the team.
 
 To update later, just edit `index.html` and push to GitHub; Vercel redeploys automatically.
 
