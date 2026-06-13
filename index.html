@@ -102,6 +102,20 @@
   .pod .medal{font-size:26px}
 
   .stat-row{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:16px}
+  /* Next kickoff / live game (4th stat card) */
+  .kick-stat{display:flex;flex-direction:column;justify-content:center;text-align:left}
+  .kc-time2{font-size:15px;font-weight:800;line-height:1.25;white-space:nowrap}
+  .kc-time2 .ampm{font-size:11px;font-weight:700;color:var(--muted);margin-left:2px}
+  .kc-time2 .tz{font-size:10px;font-weight:700;color:var(--muted2);margin-left:4px}
+  .kc-sub{font-size:9px;letter-spacing:1px;text-transform:uppercase;font-weight:700;color:var(--muted);margin:2px 0 7px}
+  .kc-sub.loc{color:var(--accent2)}
+  .kick-stat .k{margin-top:5px}
+  .kick-stat .goarrow{opacity:1}
+  .kick-stat.live{cursor:pointer;transition:.15s}
+  .kick-stat.live:hover{border-color:var(--live);transform:translateY(-1px)}
+  .livehead{display:flex;align-items:center;gap:7px;font-size:10.5px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--live);margin-bottom:6px}
+  .kc-live{font-size:14px;font-weight:700;line-height:1.3}
+  .kc-live b{color:var(--accent)}
   @media(max-width:680px){.stat-row{grid-template-columns:repeat(2,1fr)}}
   .stat{background:var(--card);border:1px solid var(--line);border-radius:13px;padding:14px}
   .stat .v{font-size:24px;font-weight:800}
@@ -187,10 +201,11 @@
   .match .side img{width:26px;height:26px;border-radius:5px;background:#fff2;border:1px solid var(--line);flex:none}
   .match .side .nm{font-weight:600;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .match .side .ow{font-size:10px;color:var(--accent2)}
-  .match .mid{text-align:center;min-width:84px}
+  .match .mid{text-align:center;min-width:98px}
   .match .sc{font-size:19px;font-weight:800;letter-spacing:1px}
   .match .vs{color:var(--muted2);font-weight:700}
-  .match .tm{font-size:11px;color:var(--muted)}
+  .match .tm{font-size:12px;color:var(--txt);font-weight:600;white-space:nowrap}
+  .match .vtm{font-size:9.5px;color:var(--muted2);white-space:nowrap;margin-top:1px}
   .match .st{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;padding:2px 7px;border-radius:6px;display:inline-block;margin-top:3px}
   .match .st.live{color:#fff;background:var(--live)}
   .match .st.ft{color:var(--muted);background:var(--card2)}
@@ -264,7 +279,7 @@
     h2.sec{font-size:13px;letter-spacing:1px}
     .pcard .ph .nm{font-size:15px}
     .match{padding:10px 11px;gap:7px}
-    .match .mid{min-width:62px}
+    .match .mid{min-width:80px}
     .match .side .nm{font-size:13px}
     .match .sc{font-size:16px}
     .people,.groups,.rules{grid-template-columns:1fr}
@@ -396,8 +411,10 @@
   </section>
 
   <footer>
-    Live data from TheSportsDB · FIFA World Cup 2026 · Auto-refreshes every 2 minutes ·
-    Built for the MDS pool
+    <div>Live data from <a href="https://www.thesportsdb.com" target="_blank" rel="noopener">TheSportsDB</a> ·
+    <a href="https://www.fifa.com/en/tournaments/mens/worldcup/canadamexicousa2026" target="_blank" rel="noopener">FIFA World Cup 2026</a> ·
+    Auto-refreshes every minute</div>
+    <div style="margin-top:6px">Built by Manoj Sarang for the The MDS BD (and Friends) FIFA World Cup Pool</div>
   </footer>
 </div>
 
@@ -414,9 +431,9 @@ const CFG = {
   // tournament; we don't hardcode which is which — we classify each round by
   // how many matches it contains (16=R32, 8=R16, 4=QF, 2=SF, 1=3rd/Final).
   koRoundCandidates: [100,105,110,115,120,125,130,140,150,160,170,180,190,200,210,220,250],
-  cacheTTL: 110*1000,      // ms — fresh data window
+  cacheTTL: 55*1000,       // ms — fresh data window
   koProbeTTL: 60*60*1000,  // ms — how often to re-scan which KO rounds exist
-  autoRefresh: 120*1000,   // ms
+  autoRefresh: 60*1000,    // ms
 };
 
 /* Penalty-shootout overrides for TERMINAL matches only (final / 3rd place).
@@ -531,7 +548,7 @@ function build(events){
   // de-dupe by idEvent
   const seen=new Set(); const evs=[];
   for(const e of events){ if(e&&e.idEvent&&!seen.has(e.idEvent)){seen.add(e.idEvent);evs.push(e);} }
-  evs.sort((a,b)=> new Date(a.strTimestamp||a.dateEvent) - new Date(b.strTimestamp||b.dateEvent));
+  evs.sort((a,b)=> ts(a)-ts(b));
 
   // team meta (name + badge) by id
   const team = {};
@@ -697,7 +714,7 @@ function computeStats(evs){
   for(const e of evs){
     if(isFinished(e)) played++;
     if(isLive(e)) live++;
-    const t=new Date(e.strTimestamp||e.dateEvent).getTime();
+    const t=ts(e);
     if(t>now && (!next || t<next.t)) next={t,ev:e};
   }
   return {played,total,live,next};
@@ -773,13 +790,36 @@ function renderOverview(m){
     });
   }
 
-  // stats — the "Matches played" card links to the Matches Played tab
-  $('#statRow').innerHTML=[
+  // first 3 stats; the "Matches played" card links to the Matches Played tab
+  const stats=[
     ['Matches played', `${st.played}<span style="font-size:14px;color:var(--muted)"> / ${st.total}</span>`, 'played'],
     ['Live now', st.live],
     ['Top score', noScores?'—':f1(top.total)],
-    ['Next kickoff', st.next?shortWhen(st.next.ev):'—'],
   ].map(([k,v,goto])=>`<div class="stat${goto?' clickable':''}"${goto?` data-goto="${goto}"`:''}><div class="v">${v}</div><div class="k">${k}${goto?' <span class="goarrow">→</span>':''}</div></div>`).join('');
+
+  // 4th card: live game (clickable -> Google live result, pulsing red dot) or next kickoff
+  const liveEv = m.evs.find(e=>isLive(e));
+  let kickCell;
+  if(liveEv){
+    const ls=scoreOf(liveEv);
+    const href=`https://www.google.com/search?q=${encodeURIComponent(liveEv.strHomeTeam+' vs '+liveEv.strAwayTeam+' live score')}`;
+    kickCell=`<div class="stat kick-stat live" data-href="${href}" title="Open the live result on Google">
+      <div class="livehead"><span class="dot live"></span>Live now</div>
+      <div class="kc-live">${esc(liveEv.strHomeTeam)} <b>${ls?`${ls.h}–${ls.a}`:''}</b> ${esc(liveEv.strAwayTeam)}</div>
+      <div class="k">Live result <span class="goarrow">↗</span></div>
+    </div>`;
+  } else if(st.next){
+    const e=st.next.ev, d=new Date(ts(e));
+    const vt=fmtKick(d, venueZone(e)), ut=fmtKick(d, null), city=venueCity(e);
+    const tline=(p)=>`<div class="kc-time2">${p.date} ${p.time} <span class="ampm">${esc(p.ampm)}</span><span class="tz">${esc(p.tz)}</span></div>`;
+    kickCell=`<div class="stat kick-stat">
+      ${tline(vt)}<div class="kc-sub loc">${esc(city)} &ndash; local</div>
+      ${tline(ut)}<div class="k">Next kickoff</div>
+    </div>`;
+  } else {
+    kickCell=`<div class="stat kick-stat"><div class="v">—</div><div class="k">Next kickoff</div></div>`;
+  }
+  $('#statRow').innerHTML = stats + kickCell;
 
   // leaderboard
   const max=Math.max(1,...S.map(s=>s.total));
@@ -871,9 +911,10 @@ function renderMatchList(wrap, list, m, upcoming){
     const hOwn=m.ownerOf[+e.idHomeTeam], aOwn=m.ownerOf[+e.idAwayTeam];
     const hW = s && s.h>s.a, aW = s && s.a>s.h;
     const stg = stageLabelFor(e,m);
+    const vt=venueTime(e);
     const mid = fin||live
       ? `<div class="sc">${s?`${s.h}–${s.a}`:'–'}</div><div class="st ${live?'live':'ft'}">${live?'Live':(stg||'FT')}</div>`
-      : `<div class="tm">${new Date(ts(e)).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</div><div class="grp">${e.strGroup?('Group '+e.strGroup):(stg||'')}</div>`;
+      : `<div class="tm">${userTime(e)}</div>${vt?`<div class="vtm" title="Kick-off time at the venue">${esc(vt)} · venue</div>`:''}<div class="grp">${e.strGroup?('Group '+e.strGroup):(stg||'')}</div>`;
     const row=el('div','match'+(live?' islive':''));
     row.innerHTML=`
       <div class="side home">
@@ -963,13 +1004,51 @@ function stageLabelFor(e,m){
 }
 
 /* helpers */
-function ts(e){ return new Date(e.strTimestamp||e.dateEvent).getTime(); }
+// TheSportsDB strTimestamp is UTC but omits the trailing 'Z'. Parse it as UTC so
+// every time renders correctly in *the viewer's* own timezone.
+function ts(e){
+  let s=e.strTimestamp;
+  if(s){ s=s.replace(' ','T'); if(!/(Z|[+-]\d\d:?\d\d)$/.test(s)) s+='Z'; const t=new Date(s).getTime(); if(!isNaN(t)) return t; }
+  return new Date((e.dateEvent||'')+'T00:00:00Z').getTime();
+}
+// Host-venue timezones by the region code in strCity ("City, XX")
+const VENUE_TZ={
+  CA:'America/Los_Angeles', WA:'America/Los_Angeles', OR:'America/Los_Angeles',
+  TX:'America/Chicago', MO:'America/Chicago', IL:'America/Chicago',
+  GA:'America/New_York', FL:'America/New_York', MA:'America/New_York',
+  NJ:'America/New_York', PA:'America/New_York', NY:'America/New_York', MI:'America/Detroit',
+  MX:'America/Mexico_City', JA:'America/Mexico_City', NL:'America/Monterrey',
+  ON:'America/Toronto', QC:'America/Toronto', BC:'America/Vancouver', AB:'America/Edmonton'
+};
+function venueZone(e){
+  const c=(e.strCity||'').split(',').pop().trim().toUpperCase();
+  return VENUE_TZ[c]||null;
+}
+// kickoff in the VIEWER's timezone, with their tz code
+function userTime(e){
+  return new Intl.DateTimeFormat([], {hour:'numeric',minute:'2-digit',timeZoneName:'short'}).format(new Date(ts(e)));
+}
+// kickoff in the HOST VENUE's timezone, with that tz code
+function venueTime(e){
+  const zone=venueZone(e), d=new Date(ts(e));
+  try{ if(zone) return new Intl.DateTimeFormat([], {timeZone:zone,hour:'numeric',minute:'2-digit',timeZoneName:'short'}).format(d); }catch(err){}
+  return e.strTimeLocal?e.strTimeLocal.slice(0,5):'';
+}
 function shortWhen(e){
   const d=new Date(ts(e)), now=new Date();
   const sameDay=d.toDateString()===now.toDateString();
-  const tm=d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+  const tm=userTime(e);
   return sameDay?tm:d.toLocaleDateString([], {month:'short',day:'numeric'})+' '+tm;
 }
+// "MMM-DD H:MM AM/PM + TZ" parts for the Next Kickoff card. zone=null -> viewer's tz.
+function fmtKick(date, zone){
+  const opt={month:'short',day:'2-digit',hour:'numeric',minute:'2-digit',timeZoneName:'short'};
+  if(zone) opt.timeZone=zone;
+  const parts=new Intl.DateTimeFormat([],opt).formatToParts(date);
+  const g=t=>{const p=parts.find(x=>x.type===t);return p?p.value:'';};
+  return {date:`${g('month')}-${g('day')}`, time:`${g('hour')}:${g('minute')}`, ampm:g('dayPeriod'), tz:g('timeZoneName')};
+}
+function venueCity(e){ return (e.strCity||'').split(',')[0].trim() || e.strVenue || e.strCountry || 'Venue'; }
 function firstName(n){ return n.split('&')[0].trim().split(' ')[0]; }
 function esc(s){ return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 
@@ -1002,8 +1081,11 @@ function activateTab(v){
   window.scrollTo({top:0,behavior:'smooth'});
 }
 $('#tabs').addEventListener('click', e=>{ const b=e.target.closest('button[data-v]'); if(b) activateTab(b.dataset.v); });
-// clickable stat cards (e.g. "Matches played" -> Matches Played tab)
-document.addEventListener('click', e=>{ const c=e.target.closest('.stat.clickable[data-goto]'); if(c) activateTab(c.dataset.goto); });
+// clickable cards: data-goto switches tab; data-href opens a new tab
+document.addEventListener('click', e=>{
+  const goto=e.target.closest('.stat.clickable[data-goto]'); if(goto){ activateTab(goto.dataset.goto); return; }
+  const link=e.target.closest('[data-href]'); if(link){ window.open(link.dataset.href,'_blank','noopener'); }
+});
 $('#refreshBtn').addEventListener('click', ()=>{ localStorage.removeItem('wc_ko_codes'); load(true); });
 
 load(false);
