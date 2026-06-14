@@ -90,12 +90,15 @@
   .leader-teams{display:flex;gap:8px;margin-top:16px;flex-wrap:wrap}
   .leader-teams img{width:26px;height:26px;border-radius:5px;background:#fff2;border:1px solid var(--line)}
 
-  .podium{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;align-items:end;padding:18px}
+  .podium{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;align-items:start;padding:18px}
   .pod{background:var(--card2);border:1px solid var(--line);border-radius:14px;padding:16px 12px;text-align:center;position:relative}
   .pod .rk{font-size:12px;color:var(--muted);font-weight:700}
-  .pod .nm{font-weight:700;margin:6px 0 2px;font-size:15px}
+  .pod .nm{font-weight:700;margin:6px 0 2px;font-size:15px;line-height:1.35}
+  .pod.multi .nm{font-size:12.5px}
   .pod .pt{font-size:22px;font-weight:800}
-  .pod.p1{transform:translateY(-12px);border-color:var(--gold)}
+  .pod.p1{margin-top:0;border-color:var(--gold)}
+  .pod.p2{margin-top:20px}
+  .pod.p3{margin-top:40px}
   .pod.p1 .pt{color:var(--gold)} .pod.p1 .medal{color:var(--gold)}
   .pod.p2 .pt{color:var(--silver)} .pod.p2 .medal{color:var(--silver)}
   .pod.p3 .pt{color:var(--bronze)} .pod.p3 .medal{color:var(--bronze)}
@@ -223,14 +226,18 @@
   table.played .when{color:var(--muted);white-space:nowrap;font-size:12.5px}
   table.played .stg{font-size:11px;font-weight:700;color:var(--muted2);text-transform:uppercase;letter-spacing:.5px;white-space:nowrap}
   table.played .stg.ko{color:var(--accent2)}
-  .mteam{display:flex;align-items:center;gap:8px;white-space:nowrap}
-  .mteam.away{flex-direction:row-reverse}
+  .mteam{display:flex;align-items:center;gap:8px;white-space:nowrap;min-width:0}
+  .mteam.home{justify-content:flex-start}
+  .mteam.away{flex-direction:row-reverse;justify-content:flex-start}
+  .mteam.home>div{text-align:left}
+  .mteam.away>div{text-align:right}
   .mteam img{width:22px;height:22px;border-radius:5px;background:#fff2;border:1px solid var(--line);flex:none}
   .mteam .mn{font-weight:600}
   .mteam .mo{font-size:10.5px;color:var(--muted2)}
   .mvs{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:10px;min-width:300px}
   .mvs .vs{color:var(--muted2);font-size:11px;font-weight:700;text-align:center}
   .mscore{font-weight:800;font-size:17px;letter-spacing:1px;white-space:nowrap}
+  .played th:nth-child(4),.played td.mscore-cell{text-align:center}
   .win-team{display:flex;align-items:center;gap:7px;white-space:nowrap;font-weight:700}
   .win-team img{width:20px;height:20px;border-radius:4px;background:#fff2;border:1px solid var(--line)}
   .win-team .wo{font-size:10.5px;color:var(--muted2);font-weight:600}
@@ -274,7 +281,7 @@
     .leader-card .name{font-size:23px}
     .leader-card .crown{font-size:96px}
     .podium{padding:14px;gap:8px}
-    .pod{padding:12px 6px} .pod.p1{transform:none}
+    .pod{padding:12px 6px} .pod.p1{margin-top:0} .pod.p2{margin-top:12px} .pod.p3{margin-top:24px}
     .pod .nm{font-size:13px} .pod .pt{font-size:19px}
     h2.sec{font-size:13px;letter-spacing:1px}
     .pcard .ph .nm{font-size:15px}
@@ -462,6 +469,47 @@ const ROSTER = [
 /* Optional: set to a participant name to highlight "your" row. */
 const ME = localStorage.getItem('wc_me') || '';
 
+/* Static team directory (name + badge) for all 48 teams, so names and flags
+   always render even before a team has played or if a fetch is incomplete.
+   Live match data still refreshes badges when available. */
+const BADGE='https://r2.thesportsdb.com/images/media/team/badge/';
+const TEAMS={
+  134497:['Mexico','3rmosi1748525208.png'], 136482:['South Africa','xjz9j91553368824.png'],
+  134517:['South Korea','a8nqfs1589564916.png'], 133904:['Czech Republic','1o0cx31654205806.png'],
+  140073:['Canada','2t631f1595154867.png'], 134510:['Bosnia-Herzegovina','wtqqst1455463120.png'],
+  136472:['Qatar','rs3ir31642708685.png'], 134506:['Switzerland','mb7yqe1717365808.png'],
+  134496:['Brazil','jl6dip1726167280.png'], 136139:['Morocco','hbmwkj1731791275.png'],
+  140175:['Haiti','gml8wx1598135302.png'], 136450:['Scotland','3691i11552945146.png'],
+  134514:['USA','21f0oi1597948195.png'], 136471:['Paraguay','khgav41553419195.png'],
+  134500:['Australia','lark6k1661780848.png'], 135985:['Turkey','70c4oo1591982459.png'],
+  133907:['Germany','1xysi51726167152.png'], 140271:['Curaçao','itygvb1600955363.png'],
+  134502:['Ivory Coast','rwxuuu1455465643.png'], 134507:['Ecuador','47wv2y1591989301.png'],
+  133905:['Netherlands','1p0hr41593787110.png'], 134503:['Japan','ffsyxz1591989843.png'],
+  133916:['Sweden','h5adzg1591981772.png'], 136142:['Tunisia','7r89rg1526727277.png'],
+  134515:['Belgium','8xlvxv1592062265.png'], 136138:['Egypt','uheyzo1742102234.png'],
+  136137:['Saudi Arabia','24xwpq1594125742.png'], 134504:['Uruguay','6vjbr11726167756.png'],
+  133909:['Spain','ncgqyr1726166942.png'], 136477:['Cape Verde','5jn0o71593280376.png'],
+  134511:['Iran','uttpvw1455465617.png'], 137449:['New Zealand','91xpk81742982935.png'],
+  133913:['France','p3n0z51726166851.png'], 136143:['Senegal','wh8dya1526727459.png'],
+  140148:['Iraq','aqidfn1742100110.png'], 136516:['Norway','gyfn811591973155.png'],
+  134509:['Argentina','3zplhu1726167477.png'], 134516:['Algeria','rrwpry1455460218.png'],
+  135986:['Austria','874p631628721400.png'], 140145:['Jordan','59fo2s1742100034.png'],
+  133914:['England','vf5ttc1726166739.png'], 133912:['Croatia','vvtsyu1455465317.png'],
+  134513:['Ghana','j589xw1751526124.png'], 136141:['Panama','asp2ck1715849700.png'],
+  133908:['Portugal','swqvpy1455466083.png'], 136475:['DR Congo','s85jjw1728749022.png'],
+  140151:['Uzbekistan','u5bgze1597943605.png'], 134501:['Colombia','4ymyku1691180081.png']
+};
+/* Fixed group assignments (team IDs) so all 12 group tables always render fully,
+   even before matches are played or if a fetch is incomplete. */
+const GROUPS={
+  A:[134497,136482,134517,133904], B:[140073,134510,136472,134506],
+  C:[134496,136139,140175,136450], D:[134514,136471,134500,135985],
+  E:[133907,140271,134502,134507], F:[133905,134503,133916,136142],
+  G:[134515,136138,134511,137449], H:[136137,134504,133909,136477],
+  I:[133913,136143,140148,136516], J:[134509,134516,135986,140145],
+  K:[133908,136475,140151,134501], L:[133914,133912,134513,136141]
+};
+
 const SCORING = { win:1, draw:0.5, loss:0 };
 const KO_BONUS = { R32:1, R16:2, QF:3, SF:4, THIRD:3.5, FINAL:5 };
 const KO_RANK  = { R32:1, R16:2, QF:3, SF:4, THIRD:5, FINAL:6 };
@@ -505,6 +553,13 @@ async function discoverKoRounds(){
   return codes;
 }
 
+async function fetchRound(r){
+  for(let attempt=0; attempt<2; attempt++){
+    try{ const j=await getJSON(api(r)); return (j && j.events) ? j.events : []; }
+    catch(e){ if(attempt===0) await new Promise(res=>setTimeout(res,400)); }
+  }
+  return [];
+}
 async function fetchAll(force){
   // serve from cache when fresh
   if(!force){
@@ -513,14 +568,24 @@ async function fetchAll(force){
       if(c && (Date.now()-c.t) < CFG.cacheTTL) return c.events;
     }catch(e){}
   }
-  const koCodes = await discoverKoRounds();
-  const rounds = [...CFG.groupRounds, ...koCodes];
-  const chunks = await pool(rounds, 5, async (r)=>{
-    try{ const j = await getJSON(api(r)); return (j && j.events) ? j.events : []; }
-    catch(e){ return []; }
-  });
-  const events = [].concat(...chunks);
-  try{ localStorage.setItem('wc_cache', JSON.stringify({t:Date.now(),events})); }catch(e){}
+  // Group stage (rounds 1-3) is the core data: fetch it reliably, low concurrency.
+  const groupChunks = await pool(CFG.groupRounds, 2, fetchRound);
+  let events = [].concat(...groupChunks);
+  // Knockout rounds don't exist until the bracket is drawn. Only probe for them
+  // once the group stage is essentially over — this avoids a large request burst
+  // (and rate-limiting) during the group stage.
+  const latestGroup = events.reduce((mx,e)=> Math.max(mx, ts(e)), 0);
+  if(latestGroup && Date.now() > latestGroup - 24*3600*1000){
+    try{
+      const koCodes = await discoverKoRounds();
+      if(koCodes.length){
+        const koChunks = await pool(koCodes, 3, fetchRound);
+        events = events.concat([].concat(...koChunks));
+      }
+    }catch(e){}
+  }
+  // Only overwrite the cache if we actually got data (don't cache an empty failure).
+  if(events.length){ try{ localStorage.setItem('wc_cache', JSON.stringify({t:Date.now(),events})); }catch(e){} }
   return events;
 }
 
@@ -550,10 +615,12 @@ function build(events){
   for(const e of events){ if(e&&e.idEvent&&!seen.has(e.idEvent)){seen.add(e.idEvent);evs.push(e);} }
   evs.sort((a,b)=> ts(a)-ts(b));
 
-  // team meta (name + badge) by id
+  // team meta (name + badge) by id — seeded from the static directory so every
+  // team always has a name and flag, then refreshed from live match data.
   const team = {};
+  for(const id in TEAMS){ team[+id]={id:+id, name:TEAMS[id][0], badge:BADGE+TEAMS[id][1]}; }
   const noteTeam=(id,name,badge)=>{ if(!id)return; id=+id; if(!team[id])team[id]={id,name:name||('Team '+id),badge:badge||''};
-    else{ if(name)team[id].name=name; if(badge&&!team[id].badge)team[id].badge=badge; } };
+    else{ if(name)team[id].name=name; if(badge)team[id].badge=badge; } };
   for(const e of evs){
     noteTeam(e.idHomeTeam, e.strHomeTeam, e.strHomeTeamBadge);
     noteTeam(e.idAwayTeam, e.strAwayTeam, e.strAwayTeamBadge);
@@ -566,6 +633,8 @@ function build(events){
   // group tables
   const groups = {}; // letter -> {teams:{id->row}}
   const groupOf = {}; // teamId -> letter
+  // seed all 12 groups with their 4 teams (zeroed) so tables always render fully
+  for(const g in GROUPS){ groups[g]={}; for(const id of GROUPS[g]){ groups[g][id]={id,P:0,W:0,D:0,L:0,GF:0,GA:0,Pts:0}; groupOf[id]=g; } }
   for(const e of evs){
     if(!isGroup(e) || !e.strGroup) continue;
     const g = e.strGroup.trim();
@@ -782,11 +851,19 @@ function renderOverview(m){
     pod.innerHTML=`<div class="podium-empty">🏁 The podium appears once matches are played.<br>Every player is currently level on 0 points — follow along in the group tables and fixtures.</div>`;
   } else {
     pod.innerHTML='';
-    const order=[S[1],S[0],S[2]], cls=['p2','p1','p3'], med=['🥈','🥇','🥉'];
-    order.forEach((s,i)=>{ if(!s)return;
-      pod.appendChild(el('div','pod '+cls[i],
-        `<div class="medal">${med[i]}</div><div class="rk">#${s.rank}</div>
-         <div class="nm">${esc(s.p)}</div><div class="pt">${f1(s.total)}</div>`));
+    // group everyone by rank so shared places show all the tied participants
+    const byRank={}; S.forEach(s=>{ (byRank[s.rank]=byRank[s.rank]||[]).push(s); });
+    const places=[...new Set(S.map(s=>s.rank))].sort((a,b)=>a-b).slice(0,3); // top 3 distinct ranks
+    const slots=[ {r:places[1],cls:'p2',m:'🥈'}, {r:places[0],cls:'p1',m:'🥇'}, {r:places[2],cls:'p3',m:'🥉'} ];
+    const present=slots.filter(x=>x.r!=null);
+    pod.style.gridTemplateColumns='repeat('+present.length+',1fr)';
+    slots.forEach(slot=>{
+      if(slot.r==null) return;
+      const ppl=byRank[slot.r];
+      const names=ppl.map(p=>esc(p.p)).join(', ');
+      pod.appendChild(el('div','pod '+slot.cls+(ppl.length>1?' multi':''),
+        `<div class="medal">${slot.m}</div><div class="rk">#${slot.r}</div>
+         <div class="nm">${names}</div><div class="pt">${f1(ppl[0].total)}</div>`));
     });
   }
 
@@ -812,9 +889,9 @@ function renderOverview(m){
     const e=st.next.ev, d=new Date(ts(e));
     const vt=fmtKick(d, venueZone(e)), ut=fmtKick(d, null), city=venueCity(e);
     const tline=(p)=>`<div class="kc-time2">${p.date} ${p.time} <span class="ampm">${esc(p.ampm)}</span><span class="tz">${esc(p.tz)}</span></div>`;
-    kickCell=`<div class="stat kick-stat">
+    kickCell=`<div class="stat kick-stat clickable" data-goto="fixtures" title="See all fixtures">
       ${tline(vt)}<div class="kc-sub loc">${esc(city)} &ndash; local</div>
-      ${tline(ut)}<div class="k">Next kickoff</div>
+      ${tline(ut)}<div class="k">Next kickoff <span class="goarrow">→</span></div>
     </div>`;
   } else {
     kickCell=`<div class="stat kick-stat"><div class="v">—</div><div class="k">Next kickoff</div></div>`;
@@ -990,7 +1067,7 @@ function renderPlayed(m){
           <div class="mteam away">${badge(e.strAwayTeamBadge)}<div><div class="mn ${winnerId===aId?'winner-name':''}">${esc(e.strAwayTeam)}</div><div class="mo">${esc(aOwn)}</div></div></div>
         </div>
       </td>
-      <td><span class="mscore">${s?`${s.h}&ndash;${s.a}`:'&ndash;'}</span></td>
+      <td class="mscore-cell"><span class="mscore">${s?`${s.h}&ndash;${s.a}`:'&ndash;'}</span></td>
       <td>${winCell}</td>
       <td class="ppts">${pts}</td>
     </tr>`;
