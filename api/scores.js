@@ -139,24 +139,30 @@ const STADIUM_CITY = {
 // few most recently played matches, so it never has the (upcoming) match shown in "Next kickoff".
 // eventsround returns every fixture in the round — including upcoming ones — with strCity present.
 const VENUE_ROUNDS = [1, 2, 3]; // group matchdays; KO venues join automatically once teams are drawn
+const GROUP_MATCH_COUNT = 72;   // all 72 group fixtures must be present before we trust/cache the map
 let venueCache = { t: 0, byPair: null };
 async function getVenues() {
   if (venueCache.byPair && Date.now() - venueCache.t < 6 * 3600 * 1000) return venueCache.byPair;
   try {
+    // Fetch the rounds in parallel; a single round failing must not poison the whole map.
+    const results = await Promise.all(VENUE_ROUNDS.map(rnd =>
+      fetch(`https://www.thesportsdb.com/api/v1/json/3/eventsround.php?id=4429&s=2026&r=${rnd}`)
+        .then(r => r.json()).catch(() => null)
+    ));
     const byPair = {};
-    for (const rnd of VENUE_ROUNDS) {
-      const r = await fetch(`https://www.thesportsdb.com/api/v1/json/3/eventsround.php?id=4429&s=2026&r=${rnd}`);
-      const j = await r.json();
-      const arr = Array.isArray(j.events) ? j.events : [];
+    for (const j of results) {
+      const arr = j && Array.isArray(j.events) ? j.events : [];
       for (const e of arr) {
         if (!e.idHomeTeam || !e.idAwayTeam) continue;
         const venue = e.strVenue || '';
         const city = e.strCity || STADIUM_CITY[venue] || '';
-        byPair[`${e.idHomeTeam}-${e.idAwayTeam}`] = { strVenue: venue, strCity: city };
+        if (city) byPair[`${e.idHomeTeam}-${e.idAwayTeam}`] = { strVenue: venue, strCity: city };
       }
     }
-    if (Object.keys(byPair).length) venueCache = { t: Date.now(), byPair };
-    return byPair;
+    // Only cache once the set is complete; a partial fetch is used for THIS response but not
+    // frozen for 6h, so the next request retries instead of leaving some games without a city.
+    if (Object.keys(byPair).length >= GROUP_MATCH_COUNT) venueCache = { t: Date.now(), byPair };
+    return Object.keys(byPair).length ? byPair : (venueCache.byPair || {});
   } catch (e) { return venueCache.byPair || {}; }
 }
 
