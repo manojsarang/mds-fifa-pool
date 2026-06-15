@@ -135,19 +135,25 @@ const STADIUM_CITY = {
 
 // Venue/city by team-pair, sourced from TheSportsDB (which has the venue football-data omits).
 // Cached for 6h since fixtures/venues don't change mid-tournament; failures are non-fatal.
+// Use the per-round endpoint, NOT eventsseason: on the free tier eventsseason returns only the
+// few most recently played matches, so it never has the (upcoming) match shown in "Next kickoff".
+// eventsround returns every fixture in the round — including upcoming ones — with strCity present.
+const VENUE_ROUNDS = [1, 2, 3]; // group matchdays; KO venues join automatically once teams are drawn
 let venueCache = { t: 0, byPair: null };
 async function getVenues() {
   if (venueCache.byPair && Date.now() - venueCache.t < 6 * 3600 * 1000) return venueCache.byPair;
   try {
-    const r = await fetch('https://www.thesportsdb.com/api/v1/json/3/eventsseason.php?id=4429&s=2026');
-    const j = await r.json();
-    const arr = Array.isArray(j.events) ? j.events : [];
     const byPair = {};
-    for (const e of arr) {
-      if (!e.idHomeTeam || !e.idAwayTeam) continue;
-      const venue = e.strVenue || '';
-      const city = e.strCity || STADIUM_CITY[venue] || '';
-      byPair[`${e.idHomeTeam}-${e.idAwayTeam}`] = { strVenue: venue, strCity: city };
+    for (const rnd of VENUE_ROUNDS) {
+      const r = await fetch(`https://www.thesportsdb.com/api/v1/json/3/eventsround.php?id=4429&s=2026&r=${rnd}`);
+      const j = await r.json();
+      const arr = Array.isArray(j.events) ? j.events : [];
+      for (const e of arr) {
+        if (!e.idHomeTeam || !e.idAwayTeam) continue;
+        const venue = e.strVenue || '';
+        const city = e.strCity || STADIUM_CITY[venue] || '';
+        byPair[`${e.idHomeTeam}-${e.idAwayTeam}`] = { strVenue: venue, strCity: city };
+      }
     }
     if (Object.keys(byPair).length) venueCache = { t: Date.now(), byPair };
     return byPair;
