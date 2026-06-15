@@ -633,12 +633,17 @@ function scoreOf(ev){
   return {h:+h, a:+a};
 }
 function statusUpper(ev){ return (ev.strStatus||'').toUpperCase(); }
-function isLive(ev){ return LIVE_STATUS.has(statusUpper(ev)) && scoreOf(ev)!=null; }
+// A match can't realistically still be live this long after kickoff (90' + half-time +
+// stoppage + extra time + penalties all fit well under this). Used to ignore a feed that
+// leaves a finished game stuck in a "live" status (e.g. football-data not finalising it).
+const MAX_LIVE_MS = 4*60*60*1000;
+function staleLive(ev){ const t = ts(ev); return t>0 && (Date.now()-t) > MAX_LIVE_MS; }
+function isLive(ev){ return LIVE_STATUS.has(statusUpper(ev)) && scoreOf(ev)!=null && !staleLive(ev); }
 function isFinished(ev){
   const s = scoreOf(ev); if(!s) return false;
   const st = statusUpper(ev);
   if(FINISHED_STATUS.has(st)) return true;
-  if(LIVE_STATUS.has(st)) return false;
+  if(LIVE_STATUS.has(st)) return staleLive(ev); // stuck "live" but long past kickoff -> treat as final
   if(st==='NS'||st==='') return false; // scheduled w/o score
   return true; // has score, not live, not scheduled
 }
