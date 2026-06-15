@@ -29,7 +29,7 @@ const NAME_TO_ID = {
   germany:133907, curacao:140271, ivorycoast:134502, cotedivoire:134502, ecuador:134507,
   netherlands:133905, japan:134503, sweden:133916, tunisia:136142,
   belgium:134515, egypt:136138, saudiarabia:136137, uruguay:134504,
-  spain:133909, capeverde:136477, caboverde:136477, iran:134511, iriran:134511, irislamicrepublicofiran:134511,
+  spain:133909, capeverde:136477, caboverde:136477, capeverdeislands:136477, iran:134511, iriran:134511, irislamicrepublicofiran:134511,
   newzealand:137449, france:133913, senegal:136143, iraq:140148, norway:136516,
   argentina:134509, algeria:134516, austria:135986, jordan:140145,
   england:133914, croatia:133912, ghana:134513, panama:136141,
