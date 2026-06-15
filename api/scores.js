@@ -119,6 +119,41 @@ function mapMatches(arr) {
   return { events, dropped, unmapped };
 }
 
+// 2026 host stadium -> "City, REGION". The region code feeds the dashboard's VENUE_TZ
+// map so the "Next kickoff" card can show the venue-local time. football-data.org's free
+// tier returns no venue/city, so we enrich each match with the stadium TheSportsDB lists.
+const STADIUM_CITY = {
+  'Estadio Azteca':'Mexico City, MX', 'Estadio Akron':'Zapopan, JA', 'Estadio BBVA':'Guadalupe, NL',
+  'BMO Field':'Toronto, ON', 'BC Place':'Vancouver, BC',
+  'SoFi Stadium':'Inglewood, CA', "Levi's Stadium":'Santa Clara, CA', 'Lumen Field':'Seattle, WA',
+  'MetLife Stadium':'East Rutherford, NJ', 'Gillette Stadium':'Foxborough, MA',
+  'Lincoln Financial Field':'Philadelphia, PA', 'Hard Rock Stadium':'Miami Gardens, FL',
+  'Mercedes-Benz Stadium':'Atlanta, GA', 'AT&T Stadium':'Arlington, TX',
+  'Reliant Stadium':'Houston, TX', 'NRG Stadium':'Houston, TX',
+  'GEHA Field at Arrowhead Stadium':'Kansas City, MO', 'Arrowhead Stadium':'Kansas City, MO'
+};
+
+// Venue/city by team-pair, sourced from TheSportsDB (which has the venue football-data omits).
+// Cached for 6h since fixtures/venues don't change mid-tournament; failures are non-fatal.
+let venueCache = { t: 0, byPair: null };
+async function getVenues() {
+  if (venueCache.byPair && Date.now() - venueCache.t < 6 * 3600 * 1000) return venueCache.byPair;
+  try {
+    const r = await fetch('https://www.thesportsdb.com/api/v1/json/3/eventsseason.php?id=4429&s=2026');
+    const j = await r.json();
+    const arr = Array.isArray(j.events) ? j.events : [];
+    const byPair = {};
+    for (const e of arr) {
+      if (!e.idHomeTeam || !e.idAwayTeam) continue;
+      const venue = e.strVenue || '';
+      const city = e.strCity || STADIUM_CITY[venue] || '';
+      byPair[`${e.idHomeTeam}-${e.idAwayTeam}`] = { strVenue: venue, strCity: city };
+    }
+    if (Object.keys(byPair).length) venueCache = { t: Date.now(), byPair };
+    return byPair;
+  } catch (e) { return venueCache.byPair || {}; }
+}
+
 let cache = { t: 0, data: null };                 // last good payload (events present)
 let limitState = { remaining: null, reset: null, at: 0 }; // last seen rate-limit state
 
@@ -183,9 +218,18 @@ module.exports = async (req, res) => {
     const arr = Array.isArray(j.matches) ? j.matches : [];
     const { events, dropped, unmapped } = mapMatches(arr);
 
+    // Enrich with venue/city from TheSportsDB so the "Next kickoff" card can show the
+    // venue-local time (football-data omits venue). Joined by team-pair; non-fatal.
+    const venues = await getVenues();
+    let venued = 0;
+    for (const ev of events) {
+      const v = venues[`${ev.idHomeTeam}-${ev.idAwayTeam}`] || venues[`${ev.idAwayTeam}-${ev.idHomeTeam}`];
+      if (v) { if (v.strVenue) ev.strVenue = v.strVenue; if (v.strCity) ev.strCity = v.strCity; if (v.strCity) venued++; }
+    }
+
     const out = {
       events, source: 'football-data.org', updated: new Date().toISOString(),
-      count: events.length, raw: arr.length, dropped, rateLimit: limits
+      count: events.length, raw: arr.length, dropped, venued, rateLimit: limits
     };
     if (events.length) cache = { t: Date.now(), data: out };
 
