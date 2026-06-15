@@ -520,6 +520,10 @@ const GROUPS={
   I:[133913,136143,140148,136516], J:[134509,134516,135986,140145],
   K:[133908,136475,140151,134501], L:[133914,133912,134513,136141]
 };
+/* Reverse lookup: team id -> group letter. Used to backfill strGroup when the
+   season feed (eventsseason.php) omits it. */
+const GROUP_OF_ID={};
+for(const _g in GROUPS){ for(const _id of GROUPS[_g]) GROUP_OF_ID[_id]=_g; }
 
 const SCORING = { win:1, draw:0.5, loss:0 };
 const KO_BONUS = { R32:1, R16:2, QF:3, SF:4, THIRD:3.5, FINAL:5 };
@@ -591,21 +595,23 @@ async function fetchAll(force){
     }
   }catch(e){ /* fall back to TheSportsDB below */ }
 
-  // Fallback source: TheSportsDB direct (keeps the page alive locally or if the proxy/key is unavailable).
-  const groupChunks = await pool(CFG.groupRounds, 2, fetchRound);
-  let events = [].concat(...groupChunks);
-  // Knockout rounds don't exist until the bracket is drawn. Only probe for them
-  // once the group stage is essentially over — this avoids a large request burst
-  // (and rate-limiting) during the group stage.
-  const latestGroup = events.reduce((mx,e)=> Math.max(mx, ts(e)), 0);
-  if(latestGroup && Date.now() > latestGroup - 24*3600*1000){
-    try{
-      const koCodes = await discoverKoRounds();
-      if(koCodes.length){
-        const koChunks = await pool(koCodes, 3, fetchRound);
-        events = events.concat([].concat(...koChunks));
-      }
-    }catch(e){}
+  // Fallback source: TheSportsDB direct (keeps the page alive if the proxy/key is unavailable).
+  // IMPORTANT: use the SEASON feed, not the per-round feed. On TheSportsDB's free tier
+  // eventsround.php returns fixtures with NO scores (intHomeScore null, status "NS"),
+  // while eventsseason.php returns every match WITH live scores and final results — and
+  // it also covers the knockout rounds once they're drawn, so no round-probing is needed.
+  let events = [];
+  try{
+    const j = await getJSON(`${CFG.apiBase}/eventsseason.php?id=${CFG.league}&s=${CFG.season}`);
+    events = (j && Array.isArray(j.events)) ? j.events : [];
+  }catch(e){}
+  // The season feed omits strGroup; backfill it from the fixed group map so the group
+  // tables and group-stage scoring work (build() skips group matches with no group).
+  for(const e of events){
+    if(e && !e.strGroup && ['1','2','3'].includes(String(e.intRound))){
+      const g = GROUP_OF_ID[+e.idHomeTeam] || GROUP_OF_ID[+e.idAwayTeam] || '';
+      if(g) e.strGroup = g;
+    }
   }
   // Only overwrite the cache if we actually got data (don't cache an empty failure).
   if(events.length){ try{ localStorage.setItem('wc_cache', JSON.stringify({t:Date.now(),events})); }catch(e){} }
