@@ -8,6 +8,11 @@
 //   3. Redeploy. The dashboard calls /api/scores automatically.
 //
 // Edge-cached (~60s) so the upstream API is hit at most ~once/min — well under 10/min.
+//
+// Diagnostics: GET /api/scores?debug=1 returns the upstream HTTP status, the
+// football-data rate-limit headers, raw vs mapped match counts, and a sample of any
+// team names that failed to map — without falling back to cache. Use it to see exactly
+// why the feed is empty (throttled 429, restricted 403, or an unmapped-name drop).
 
 const API = 'https://api.football-data.org/v4';
 const COMP = 'WC';        // FIFA World Cup competition code
@@ -70,58 +75,130 @@ function statusMap(s) {
 }
 const groupLetter = g => { const m = (g || '').match(/group[_ ]?([a-l])/i); return m ? m[1].toUpperCase() : ''; };
 
-let cache = { t: 0, data: null };
+// Read football-data.org's rate-limit headers (used for automatic throttling).
+//   X-Requests-Available-Minute : requests remaining in the current minute window
+//   X-RequestCounter-Reset      : seconds until that window resets
+function readLimits(r) {
+  const get = n => { try { return r.headers.get(n); } catch (e) { return null; } };
+  const rem = get('X-Requests-Available-Minute');
+  const reset = get('X-RequestCounter-Reset');
+  return {
+    remaining: rem == null || rem === '' ? null : parseInt(rem, 10),
+    reset: reset == null || reset === '' ? null : parseInt(reset, 10)
+  };
+}
+
+function mapMatches(arr) {
+  let dropped = 0;
+  const unmapped = [];
+  const events = arr.map(m => {
+    const hName = m.homeTeam && m.homeTeam.name;
+    const aName = m.awayTeam && m.awayTeam.name;
+    const hId = idOf(hName), aId = idOf(aName);
+    const intRound = stageRound(m.stage, m.matchday);
+    const isGroup = ['1', '2', '3'].includes(intRound);
+    const ft = (m.score && m.score.fullTime) || {};
+    const st = statusMap(m.status);
+    if (!hId || !aId) { dropped++; if (unmapped.length < 12) unmapped.push({ home: hName, away: aName, stage: m.stage }); }
+    return {
+      idEvent: String(m.id),
+      strHomeTeam: hName, strAwayTeam: aName,
+      idHomeTeam: hId, idAwayTeam: aId,
+      strHomeTeamBadge: (m.homeTeam && m.homeTeam.crest) || '',
+      strAwayTeamBadge: (m.awayTeam && m.awayTeam.crest) || '',
+      intHomeScore: ft.home == null ? null : String(ft.home),
+      intAwayScore: ft.away == null ? null : String(ft.away),
+      strStatus: st,
+      strTimestamp: m.utcDate || null,
+      dateEvent: (m.utcDate || '').slice(0, 10),
+      intRound: intRound,
+      strGroup: isGroup ? (groupLetter(m.group) || GROUP_OF[hId] || GROUP_OF[aId] || '') : '',
+      strVenue: m.venue || '', strCity: ''
+    };
+  }).filter(e => e.idHomeTeam && e.idAwayTeam);
+  return { events, dropped, unmapped };
+}
+
+let cache = { t: 0, data: null };                 // last good payload (events present)
+let limitState = { remaining: null, reset: null, at: 0 }; // last seen rate-limit state
 
 module.exports = async (req, res) => {
+  const debug = !!(req.url && /[?&]debug=1\b/.test(req.url));
   res.setHeader('Content-Type', 'application/json');
-  res.setHeader('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=120');
+  res.setHeader('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=300');
 
   const key = process.env.FOOTBALL_DATA_KEY;
   if (!key) {
     res.statusCode = 500;
     return res.end(JSON.stringify({ error: 'FOOTBALL_DATA_KEY not set', events: [] }));
   }
-  if (cache.data && Date.now() - cache.t < 45 * 1000) {
+
+  // Serve fresh in-memory cache (within 45s) to spare the upstream quota.
+  if (!debug && cache.data && Date.now() - cache.t < 45 * 1000) {
+    res.setHeader('X-Cache', 'hit');
     return res.end(JSON.stringify(cache.data));
+  }
+
+  // Automatic throttling: if the last upstream call reported zero requests left and the
+  // reset window hasn't elapsed, don't call upstream again — serve the last good data.
+  if (!debug && limitState.remaining === 0 && cache.data) {
+    const elapsed = (Date.now() - limitState.at) / 1000;
+    const window = limitState.reset || 60;
+    if (elapsed < window) {
+      res.setHeader('X-Cache', 'stale-throttled');
+      res.setHeader('Retry-After', String(Math.max(1, Math.ceil(window - elapsed))));
+      return res.end(JSON.stringify(cache.data));
+    }
   }
 
   try {
     const r = await fetch(`${API}/competitions/${COMP}/matches?season=${SEASON}`, {
       headers: { 'X-Auth-Token': key }
     });
-    const j = await r.json();
-    const arr = Array.isArray(j.matches) ? j.matches : [];
+    const limits = readLimits(r);
+    limitState = { remaining: limits.remaining, reset: limits.reset, at: Date.now() };
+    if (limits.remaining != null) res.setHeader('X-Requests-Available-Minute', String(limits.remaining));
+    if (limits.reset != null) res.setHeader('X-RequestCounter-Reset', String(limits.reset));
 
-    const events = arr.map(m => {
-      const hName = m.homeTeam && m.homeTeam.name;
-      const aName = m.awayTeam && m.awayTeam.name;
-      const hId = idOf(hName), aId = idOf(aName);
-      const intRound = stageRound(m.stage, m.matchday);
-      const isGroup = ['1', '2', '3'].includes(intRound);
-      const ft = (m.score && m.score.fullTime) || {};
-      const st = statusMap(m.status);
-      return {
-        idEvent: String(m.id),
-        strHomeTeam: hName, strAwayTeam: aName,
-        idHomeTeam: hId, idAwayTeam: aId,
-        strHomeTeamBadge: (m.homeTeam && m.homeTeam.crest) || '',
-        strAwayTeamBadge: (m.awayTeam && m.awayTeam.crest) || '',
-        intHomeScore: ft.home == null ? null : String(ft.home),
-        intAwayScore: ft.away == null ? null : String(ft.away),
-        strStatus: st,
-        strTimestamp: m.utcDate || null,
-        dateEvent: (m.utcDate || '').slice(0, 10),
-        intRound: intRound,
-        strGroup: isGroup ? (groupLetter(m.group) || GROUP_OF[hId] || GROUP_OF[aId] || '') : '',
-        strVenue: m.venue || '', strCity: ''
+    const text = await r.text();
+    let j = {};
+    try { j = JSON.parse(text); } catch (e) {}
+
+    // Upstream error (429 throttled / 403 restricted / 4xx-5xx) — surface it instead of
+    // silently returning empty, which is what made the dashboard fall back to TheSportsDB.
+    if (!r.ok) {
+      if (r.status === 429 && limits.reset) res.setHeader('Retry-After', String(limits.reset));
+      const info = {
+        error: 'football-data.org returned HTTP ' + r.status,
+        upstreamStatus: r.status,
+        upstreamMessage: (j && j.message) || text.slice(0, 300),
+        rateLimit: limits,
+        events: (cache.data && cache.data.events) || []
       };
-    }).filter(e => e.idHomeTeam && e.idAwayTeam);
+      if (cache.data && !debug) { res.setHeader('X-Cache', 'stale-error'); return res.end(JSON.stringify(cache.data)); }
+      res.statusCode = debug ? 200 : 502;
+      return res.end(JSON.stringify(info));
+    }
 
-    const out = { events, source: 'football-data.org', updated: new Date().toISOString(), count: events.length };
+    const arr = Array.isArray(j.matches) ? j.matches : [];
+    const { events, dropped, unmapped } = mapMatches(arr);
+
+    const out = {
+      events, source: 'football-data.org', updated: new Date().toISOString(),
+      count: events.length, raw: arr.length, dropped, rateLimit: limits
+    };
     if (events.length) cache = { t: Date.now(), data: out };
+
+    if (debug) {
+      res.setHeader('X-Cache', 'miss');
+      return res.end(JSON.stringify({ ...out, unmappedSample: unmapped }, null, 2));
+    }
+    // Got a 200 but nothing usable (e.g. all names unmapped, or no matches yet):
+    // fall back to last good data rather than returning an empty feed.
+    if (!events.length && cache.data) { res.setHeader('X-Cache', 'stale-empty'); return res.end(JSON.stringify(cache.data)); }
     return res.end(JSON.stringify(out));
   } catch (e) {
-    if (cache.data) return res.end(JSON.stringify(cache.data));
+    if (cache.data) { res.setHeader('X-Cache', 'stale-exception'); return res.end(JSON.stringify(cache.data)); }
     res.statusCode = 502;
     return res.end(JSON.stringify({ error: String(e), events: [] }));
   }
