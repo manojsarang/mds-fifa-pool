@@ -119,51 +119,21 @@ function mapMatches(arr) {
   return { events, dropped, unmapped };
 }
 
-// 2026 host stadium -> "City, REGION". The region code feeds the dashboard's VENUE_TZ
-// map so the "Next kickoff" card can show the venue-local time. football-data.org's free
-// tier returns no venue/city, so we enrich each match with the stadium TheSportsDB lists.
-const STADIUM_CITY = {
-  'Estadio Azteca':'Mexico City, MX', 'Estadio Akron':'Zapopan, JA', 'Estadio BBVA':'Guadalupe, NL',
-  'BMO Field':'Toronto, ON', 'BC Place':'Vancouver, BC',
-  'SoFi Stadium':'Inglewood, CA', "Levi's Stadium":'Santa Clara, CA', 'Lumen Field':'Seattle, WA',
-  'MetLife Stadium':'East Rutherford, NJ', 'Gillette Stadium':'Foxborough, MA',
-  'Lincoln Financial Field':'Philadelphia, PA', 'Hard Rock Stadium':'Miami Gardens, FL',
-  'Mercedes-Benz Stadium':'Atlanta, GA', 'AT&T Stadium':'Arlington, TX',
-  'Reliant Stadium':'Houston, TX', 'NRG Stadium':'Houston, TX',
-  'GEHA Field at Arrowhead Stadium':'Kansas City, MO', 'Arrowhead Stadium':'Kansas City, MO'
+// Venue city ("City, REGION") for every group fixture, keyed by "<homeId>-<awayId>".
+// football-data.org's free tier returns no venue/city, and TheSportsDB's free key truncates its
+// per-round feed to a handful of rows when called server-side — so we embed the (fixed) 2026
+// group schedule directly. The REGION code feeds the dashboard's VENUE_TZ map so the "Next
+// kickoff" card can show the venue-local time. Knockout venues are added once the bracket is drawn.
+const VENUE_BY_PAIR = {
+  // Matchday 1
+  '134497-136482':'Mexico City, MX','134517-133904':'Zapopan, JA','140073-134510':'Toronto, ON','134514-136471':'Inglewood, CA','134496-136139':'East Rutherford, NJ','136472-134506':'Santa Clara, CA','140175-136450':'Foxborough, MA','133907-140271':'Houston, TX','134502-134507':'Philadelphia, PA','133905-134503':'Arlington, TX','134500-135985':'Vancouver, BC','134515-136138':'Seattle, WA','136137-134504':'Miami Gardens, FL','133909-136477':'Atlanta, GA','133916-136142':'Guadalupe, NL','134511-137449':'Inglewood, CA','133913-136143':'East Rutherford, NJ','140148-136516':'Foxborough, MA','134509-134516':'Kansas City, MO','135986-140145':'Santa Clara, CA','133914-133912':'Arlington, TX','134513-136141':'Toronto, ON','133908-136475':'Houston, TX','140151-134501':'Mexico City, MX',
+  // Matchday 2
+  '140073-136472':'Vancouver, BC','133904-136482':'Atlanta, GA','134506-134510':'Inglewood, CA','134497-134517':'Zapopan, JA','136450-136139':'Foxborough, MA','134514-134500':'Seattle, WA','134496-140175':'Philadelphia, PA','133907-134502':'Toronto, ON','135985-136471':'Santa Clara, CA','133905-133916':'Houston, TX','134507-140271':'Kansas City, MO','136142-134503':'Guadalupe, NL','134515-134511':'Inglewood, CA','133909-136137':'Atlanta, GA','134504-136477':'Miami Gardens, FL','137449-136138':'Vancouver, BC','134509-135986':'Arlington, TX','133913-140148':'Philadelphia, PA','140145-134516':'Santa Clara, CA','136516-136143':'East Rutherford, NJ','133914-134513':'Foxborough, MA','136141-133912':'Toronto, ON','133908-140151':'Houston, TX','134501-136475':'Zapopan, JA',
+  // Matchday 3
+  '136139-140175':'Atlanta, GA','136450-134496':'Miami Gardens, FL','134506-140073':'Vancouver, BC','134510-136472':'Seattle, WA','136482-134517':'Guadalupe, NL','140271-134502':'Philadelphia, PA','134507-133907':'East Rutherford, NJ','136142-133905':'Kansas City, MO','133904-134497':'Mexico City, MX','134503-133916':'Arlington, TX','136471-134500':'Santa Clara, CA','136516-133913':'Foxborough, MA','135985-134514':'Inglewood, CA','136143-140148':'Toronto, ON','136477-136137':'Houston, TX','136138-134511':'Seattle, WA','137449-134515':'Vancouver, BC','134504-133909':'Zapopan, JA','134501-133908':'Miami Gardens, FL','133912-134513':'Philadelphia, PA','136141-133914':'East Rutherford, NJ','136475-140151':'Atlanta, GA','134516-135986':'Kansas City, MO','140145-134509':'Arlington, TX'
 };
-
-// Venue/city by team-pair, sourced from TheSportsDB (which has the venue football-data omits).
-// Cached for 6h since fixtures/venues don't change mid-tournament; failures are non-fatal.
-// Use the per-round endpoint, NOT eventsseason: on the free tier eventsseason returns only the
-// few most recently played matches, so it never has the (upcoming) match shown in "Next kickoff".
-// eventsround returns every fixture in the round — including upcoming ones — with strCity present.
-const VENUE_ROUNDS = [1, 2, 3]; // group matchdays; KO venues join automatically once teams are drawn
-const GROUP_MATCH_COUNT = 72;   // all 72 group fixtures must be present before we trust/cache the map
-let venueCache = { t: 0, byPair: null };
-async function getVenues() {
-  if (venueCache.byPair && Date.now() - venueCache.t < 6 * 3600 * 1000) return venueCache.byPair;
-  try {
-    // Fetch the rounds in parallel; a single round failing must not poison the whole map.
-    const results = await Promise.all(VENUE_ROUNDS.map(rnd =>
-      fetch(`https://www.thesportsdb.com/api/v1/json/3/eventsround.php?id=4429&s=2026&r=${rnd}`)
-        .then(r => r.json()).catch(() => null)
-    ));
-    const byPair = {};
-    for (const j of results) {
-      const arr = j && Array.isArray(j.events) ? j.events : [];
-      for (const e of arr) {
-        if (!e.idHomeTeam || !e.idAwayTeam) continue;
-        const venue = e.strVenue || '';
-        const city = e.strCity || STADIUM_CITY[venue] || '';
-        if (city) byPair[`${e.idHomeTeam}-${e.idAwayTeam}`] = { strVenue: venue, strCity: city };
-      }
-    }
-    // Only cache once the set is complete; a partial fetch is used for THIS response but not
-    // frozen for 6h, so the next request retries instead of leaving some games without a city.
-    if (Object.keys(byPair).length >= GROUP_MATCH_COUNT) venueCache = { t: Date.now(), byPair };
-    return Object.keys(byPair).length ? byPair : (venueCache.byPair || {});
-  } catch (e) { return venueCache.byPair || {}; }
+function venueCityFor(hId, aId) {
+  return VENUE_BY_PAIR[`${hId}-${aId}`] || VENUE_BY_PAIR[`${aId}-${hId}`] || '';
 }
 
 let cache = { t: 0, data: null };                 // last good payload (events present)
@@ -230,13 +200,12 @@ module.exports = async (req, res) => {
     const arr = Array.isArray(j.matches) ? j.matches : [];
     const { events, dropped, unmapped } = mapMatches(arr);
 
-    // Enrich with venue/city from TheSportsDB so the "Next kickoff" card can show the
-    // venue-local time (football-data omits venue). Joined by team-pair; non-fatal.
-    const venues = await getVenues();
+    // Enrich each match with its venue city (football-data omits it) so the "Next kickoff"
+    // card can show the venue-local time. Uses the embedded static schedule; no network call.
     let venued = 0;
     for (const ev of events) {
-      const v = venues[`${ev.idHomeTeam}-${ev.idAwayTeam}`] || venues[`${ev.idAwayTeam}-${ev.idHomeTeam}`];
-      if (v) { if (v.strVenue) ev.strVenue = v.strVenue; if (v.strCity) ev.strCity = v.strCity; if (v.strCity) venued++; }
+      const city = venueCityFor(ev.idHomeTeam, ev.idAwayTeam);
+      if (city) { ev.strCity = city; venued++; }
     }
 
     const out = {
