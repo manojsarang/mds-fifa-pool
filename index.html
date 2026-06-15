@@ -109,6 +109,7 @@
   .pod .medal{font-size:26px}
 
   .stat-row{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:16px}
+  #statRow{grid-template-columns:repeat(2,1fr)}
   /* Next kickoff / live game (4th stat card) */
   .kick-stat{display:flex;flex-direction:column;justify-content:center;text-align:left}
   .kc-time2{font-size:15px;font-weight:800;line-height:1.25;white-space:nowrap}
@@ -164,7 +165,11 @@
 
   /* Team cards */
   .people{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,290px),1fr));gap:16px}
-  .pcard{padding:16px}
+  #lbBody tr.clickable{cursor:pointer;transition:background .15s}
+  #lbBody tr.clickable:hover{background:var(--card2)}
+  .pcard{padding:16px;scroll-margin-top:84px}
+  .pcard.flash{animation:pflash 1.7s ease-out}
+  @keyframes pflash{0%,30%{box-shadow:0 0 0 2px var(--accent2)}100%{box-shadow:var(--shadow-sm)}}
   .pcard .ph{display:flex;align-items:center;gap:10px;margin-bottom:4px}
   .pcard .ph .rk{width:30px;height:30px;border-radius:9px;background:var(--card2);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-weight:800;flex:none}
   .pcard .ph .nm{font-weight:800;font-size:16px}
@@ -906,11 +911,9 @@ function renderOverview(m){
     });
   }
 
-  // first 3 stats; the "Matches played" card links to the Matches Played tab
+  // "Matches played" card links to the Matches Played tab
   const stats=[
     ['Matches played', `${st.played}<span style="font-size:14px;color:var(--muted)"> / ${st.total}</span>`, 'played', 'g-blue'],
-    ['Live now', st.live, null, st.live>0?'g-red':'g-navy'],
-    ['Top score', noScores?'—':f1(top.total), null, 'g-sky'],
   ].map(([k,v,goto,g])=>`<div class="stat${goto?' clickable':''}"${goto?` data-goto="${goto}"`:''}><div class="stat-inner"><span class="stat-ic ${g}"></span><div class="stat-tx"><div class="v">${v}</div><div class="k">${k}${goto?' <span class="goarrow">→</span>':''}</div></div></div></div>`).join('');
 
   // 4th card: live game (clickable -> Google live result, pulsing red dot) or next kickoff
@@ -942,7 +945,7 @@ function renderOverview(m){
   $('#lbBody').innerHTML = S.map(s=>{
     const g = (!noScores && s.rank<=3)?('g'+s.rank):'';
     const rankTxt = noScores ? 'T1' : s.rank;
-    return `<tr class="${s.p===ME?'me':''}">
+    return `<tr class="clickable ${s.p===ME?'me':''}" data-player="${slug(s.p)}" title="View ${esc(s.p)} in Teams &amp; Picks">
       <td><span class="rank-badge ${g}">${rankTxt}</span></td>
       <td><div class="pname">${esc(s.p)}</div></td>
       <td><div class="totcell">${f1(s.total)}</div><div class="bar"><i style="width:${(s.total/max*100)||0}%"></i></div></td>
@@ -960,6 +963,7 @@ function renderPeople(m){
   const wrap=$('#people'); wrap.innerHTML='';
   m.standings.forEach(s=>{
     const c=el('div','card pcard');
+    c.id='player-'+slug(s.p);
     c.innerHTML=`
       <div class="ph">
         <div class="rk">${s.rank}</div>
@@ -1167,6 +1171,7 @@ function fmtKick(date, zone){
 function venueCity(e){ return (e.strCity||'').split(',')[0].trim() || e.strVenue || e.strCountry || 'Venue'; }
 function firstName(n){ return n.split('&')[0].trim().split(' ')[0]; }
 function esc(s){ return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function slug(s){ return (s==null?'':String(s)).toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,''); }
 
 /* ============================================================
    APP
@@ -1191,15 +1196,29 @@ async function load(force){
 }
 
 // tabs
-function activateTab(v){
+function activateTab(v, noScroll){
   document.querySelectorAll('#tabs button').forEach(x=>x.classList.toggle('active', x.dataset.v===v));
   document.querySelectorAll('section.view').forEach(s=>s.classList.toggle('active', s.id==='v-'+v));
-  window.scrollTo({top:0,behavior:'smooth'});
+  if(!noScroll) window.scrollTo({top:0,behavior:'smooth'});
 }
 $('#tabs').addEventListener('click', e=>{ const b=e.target.closest('button[data-v]'); if(b) activateTab(b.dataset.v); });
 // clickable cards: data-goto switches tab; data-href opens a new tab
 document.addEventListener('click', e=>{
   const goto=e.target.closest('.stat.clickable[data-goto]'); if(goto){ activateTab(goto.dataset.goto); return; }
+  // leaderboard row -> open that player's card in the Teams & Picks tab
+  const lbrow=e.target.closest('#lbBody tr[data-player]');
+  if(lbrow){
+    activateTab('people', true);
+    const card=document.getElementById('player-'+lbrow.dataset.player);
+    if(card){
+      requestAnimationFrame(()=>{
+        card.scrollIntoView({behavior:'smooth', block:'start'});
+        card.classList.remove('flash'); void card.offsetWidth; card.classList.add('flash');
+        setTimeout(()=>card.classList.remove('flash'), 1800);
+      });
+    }
+    return;
+  }
   const link=e.target.closest('[data-href]'); if(link){ window.open(link.dataset.href,'_blank','noopener'); }
 });
 $('#refreshBtn').addEventListener('click', ()=>{ localStorage.removeItem('wc_ko_codes'); load(true); });
