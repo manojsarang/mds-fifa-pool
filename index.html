@@ -525,6 +525,11 @@ const GROUPS={
 const GROUP_OF_ID={};
 for(const _g in GROUPS){ for(const _id of GROUPS[_g]) GROUP_OF_ID[_id]=_g; }
 
+/* Total matches in the 2026 World Cup: 72 group (12 groups x 6) + 32 knockout
+   (R32 16 + R16 8 + QF 4 + SF 2 + 3rd 1 + Final 1). Used as the fixed denominator
+   for "Matches played" so it doesn't drift with how many fixtures the feed has loaded. */
+const TOURNAMENT_MATCHES = 104;
+
 const SCORING = { win:1, draw:0.5, loss:0 };
 const KO_BONUS = { R32:1, R16:2, QF:3, SF:4, THIRD:3.5, FINAL:5 };
 const KO_RANK  = { R32:1, R16:2, QF:3, SF:4, THIRD:5, FINAL:6 };
@@ -806,7 +811,7 @@ function build(events){
 }
 
 function computeStats(evs){
-  let played=0, live=0, total=evs.length;
+  let played=0, live=0, total=TOURNAMENT_MATCHES;
   let next=null;
   const now=Date.now();
   for(const e of evs){
